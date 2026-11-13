@@ -1,0 +1,109 @@
+---
+title: Model diagnostics
+output: pdf_document
+---
+
+Solutions:
+
+```{r}
+checking<-function(ymatrix,xmatrix,famil){
+    model1<-glm(ymatrix~.,data=data.frame(ymatrix,xmatrix),family=famil)
+    print(summary(model1))
+    mu<-predict(model1,type="response")
+    eta<-predict(model1,type="link")
+    par(mfrow=c(1,2))
+    # See Remarks 1-2
+    plot(rstandard(model1),mu,
+    xlab="Standardised deviance",ylab="Fitted linear predictor")
+    plot(rstandard(model1),eta,
+    xlab="Standardised deviance",ylab="Fitted mean")
+    # See Remark 3
+    if (famil=="poisson"){
+        z<-log(mu)+(y-mu)/mu
+    }
+    if (famil=="gaussian"){
+        z<-y
+    }
+    if (famil=="binomial"){
+        z<-log(mu/(1-mu))+(y-mu)/(mu*(1-mu))
+    }
+    if (famil=="Gamma"){
+        z<-1/mu-(y-mu)/(mu^2)
+    }
+    par(mfrow=c(3,dim(xmatrix)[2]/3))
+    # See Remark 4
+    for (i in 1:dim(xmatrix)[2]){
+        temp4<-z-eta+coef(model1)[i]*x[,i]
+        plot(temp4,x[,i],ylab=paste("covariate",i),xlab="ei")
+        temp<-lm(x[,i]~temp4)
+        delta<-(max(temp4)-min(temp4))/10
+        x2<-seq(min(temp4)-delta,max(temp4)+delta,by=((max(temp4)-min(temp4))/1000))
+        lines(x2,temp$coefficients[1]+temp$coefficients[2]*x2)
+    }
+    par(mfrow=c(1,1))
+    cooks.distance(model1)
+    # See Remark 5
+    plot(cooks.distance(model1),
+    xlab="ith observations",ylab="cook's distance")
+    temp<-xmatrix%*%solve(t(xmatrix)%*%xmatrix)%*%t(xmatrix)
+    temp<-as.matrix(temp)
+    set1<-matrix(0,nrow=1,ncol=nrow(temp))
+    for (i in 1:nrow(temp)){
+        set1[i]<-temp[i,i]
+    }
+    as.array(set1)
+    # See Remark 6
+    plot(1:length(as.list(set1)),as.list(set1),
+    xlab="ith observations",
+    ylab="leverage")
+}
+
+library(faraway)
+data(gala)
+x<-as.matrix(gala[,2:dim(gala)[2]])
+y<-as.matrix(gala[,1])
+checking(y,x,"gaussian")
+```
+
+Remarks:
+
+1. Both plots should show a similar trend because the fitted linear predictor $\eta$ and the fitted mean $\mu$ are related by the smooth link function $\eta=f(\mu)$. However, they are plotted on different scales, so they do not have to look identical.
+2. If the model is selected correctly, the residuals should be centered around 0 with roughly constant variance. We should not expect any curvature or systematic pattern.
+3. For simplicity, we assume the GLM is either binomial, gamma, normal, or Poisson, with the corresponding link function.
+
+Remark 3 continue: For a Poisson GLM with the log link,
+$$
+g(\mu_i)=\eta_i=\log(\mu_i)
+$$
+Therefore, the adjusted dependent variable is
+$$
+z_i=\hat{\eta}_i+(y_i-\hat{\mu}_i)\left(\frac{1}{\hat{\mu}_i}\right)=\log(\hat{\mu}_i)+\frac{y_i-\hat{\mu}_i}{\hat{\mu}_i}
+$$
+For a Gamma GLM with the inverse link,
+$$
+g(\mu_i)=\eta_i=\frac{1}{\mu_i}
+$$
+Similarly,
+$$
+z_i=\frac{1}{\hat{\mu}_i}-\frac{y_i-\hat{\mu}_i}{\hat{\mu}_i^2}.
+$$
+For a Normal GLM with the identity link,
+$$
+g(\mu_i)=\eta_i=\mu_i
+$$
+Similarly,
+$$
+z_i=\hat{\mu}_i+(y_i-\hat{\mu}_i)=y_i.
+$$
+For a Binomial GLM with the logit link,
+$$
+g(\mu_i)=\eta_i=\log\left(\frac{\mu_i}{1-\mu_i}\right)
+$$
+Similarly,
+$$
+z_i=\log\left(\frac{\hat{\mu}_i}{1-\hat{\mu}_i}\right)+\frac{y_i-\hat{\mu}_i}{\hat{\mu}_i(1-\hat{\mu}_i)}.
+$$
+
+4. If the scale is correct, the observations should lie close to the line of best fit. If the plot shows clear curvature rather than an approximately linear relationship, then the link scale may not be suitable for the observations.
+5. Cook’s distance measures how much influence an observation has on the model. If Cook’s distance is unexpectedly large, the observation may have too much influence on the fitted model, so caution is needed when interpreting the results.
+6. Leverage indicates how much an observation can potentially influence the fitted GLM because of its unusual predictor values.
