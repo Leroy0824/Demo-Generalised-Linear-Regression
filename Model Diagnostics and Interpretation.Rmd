@@ -1,0 +1,157 @@
+---
+title: Model diagnostics and interpretation
+output: pdf_document
+---
+# Example 1
+
+We want to fit the data with poisson GLM.
+
+Recall that
+$$
+\beta_0+\beta_1 x_i=\eta_i=g(\mu_i)=\log(\mu_i)
+$$
+```{r}
+x<-c(1,2)
+y<-c(0,1)
+model1<-glm(y~ x-1,family=poisson(link="log"))
+summary(model1)
+coefficient<-summary(model1)$coefficients
+temp<-exp(coefficient[1,1]*x) #Fitted value of mu
+temp
+summary(model1)$deviance #Deviance residual
+residuals(model1,type="pearson")
+rstandard(model1,type="pearson")
+
+lmodel<-logLik(model1)
+lnull<-logLik(update(model1,.~1))
+rsquared<-1-(lmodel/lnull)
+rsquared
+```
+
+The fitted means are similar $((\hat{\mu}_1 \approx 0.78)$, $(\hat{\mu}_2 \approx 0.61))$, the standardised Pearson residuals $(\approx \pm 1.02)$ are not especially large, and the deviance-based pseudo-$R^2$ is low $(\approx 0.114)$, indicating only a small improvement over the null model, though conclusions are limited by the small sample size.
+
+# Example 2
+```{r}
+library(faraway)
+data(gala)
+str(gala)
+temp<-gala[,-2]
+str(temp)
+model1<-glm(Species~.,family=poisson(link="log"),data=gala)
+model2<-summary(model1)
+names(model2)
+model2$deviance
+
+set1<-c("Elevation","Nearest","Scruz","Adjacent","1")
+for (i in set1){
+    nullmodel<-update(model1,as.formula(paste(". ~ . -", i)))
+    print(anova(nullmodel,model1,test="Chisq"))
+}
+fullmodel<-logLik(model1)
+nullmodel<-logLik(update(model1,.~1))
+1-fullmodel/nullmodel
+
+par(mfrow=c(2,2))
+plot(predict(model1,type="response"),residuals(model1,type="deviance"))
+plot(predict(model1,type="link"),residuals(model1,type="deviance"))
+plot(predict(model1,type="response"),residuals(model1,type="response"))
+plot(predict(model1,type="link"),residuals(model1,type="response"))
+```
+
+Within each row, the two plots show the same residuals against fitted values on different scales: fitted mean and linear predictor. The first row shows deviance residuals, and the second row shows raw response residuals. The residuals mostly cluster around zero, and there is no obvious smooth trend. However, there are few observations at higher fitted values, and these plots alone are not enough to confirm that the model is adequate. Therefore, we should also check standardised residuals, dispersion and influential observations.
+```{r}
+library(faraway)
+data(gala)
+model1<-glm(Species~.,family=poisson(link="log"),data=gala)
+mu<-fitted(model1,type="response")
+res<-residuals(model1,type="response")
+par(mfrow=c(2,2))
+plot(mu,res^2,xlab="residuals",ylab="fitted mean^2")
+abline(a=0,b=1)
+plot(mu,res^2,xlab="residuals",ylab="fitted mean^2",xlim=c(0,100))
+abline(a=0,b=1)
+plot(mu,res^2,xlab="residuals",ylab="fitted mean^2",xlim=c(0,50))
+abline(a=0,b=1)
+plot(mu,res^2,xlab="residuals",ylab="fitted mean^2",xlim=c(15,35))
+abline(a=0,b=1)
+```
+
+The squared-residual-versus-fitted-mean plot can be compared with the Poisson reference line $y=x$. Several observations lie well above the line, suggesting larger-than-expected squared residuals for those observations. This may indicate unusual observations or extra variability, but the plot alone is not enough to conclude that the Poisson model fits or fails to fit.
+
+Recall that for a GLM, the adjusted dependent variable is defined as
+$$
+z_i
+=
+\hat{\eta}_i+(y_i-\hat{\mu}_i)\left.\frac{\partial \eta_i}{\partial \mu_i}\right|_{\mu_i=\hat{\mu}_i}
+$$
+For a Poisson GLM with a log link,
+$$
+\eta_i=\log(\mu_i)
+$$
+Therefore,
+$$
+\boxed{
+z_i=\log(\hat{\mu}_i)+\frac{y_i-\hat{\mu}_i}{\hat{\mu}_i}
+}.
+$$
+```{r}
+library(faraway)
+data(gala)
+model1<-glm(Species~.,family=poisson(link="log"),data=gala)
+mu<-fitted(model1,type="response")
+y<-gala$Species
+z<-log(mu)+(y-mu)/mu
+plot(z,log(mu),xlab="Adjusted dependent variable",ylab="linear predictor")
+temp<-lm(log(mu)~z)
+temp
+x<-seq(1,8,by=0.001)
+lines(x,temp$coefficients[1]+temp$coefficients[2]*x)
+```
+
+The adjusted dependent variable shows an approximately linear relationship with the fitted linear predictor, although there is noticeable scatter around the trend. There is no obvious strong curvature, which provides some evidence that the log link is reasonable for this Poisson GLM, but it does not prove the link is correct.
+
+```{r}
+library(faraway)
+data(gala)
+model1<-glm(Species~.,family=poisson(link="log"),data=gala)
+mu<-fitted(model1,type="response")
+y<-gala$Species
+z<-log(mu)+(y-mu)/mu
+x<-model.matrix(model1)
+eta<-predict(model1,type="link")
+par(mfrow=c(3,2))
+set1<-c("Endemics","Area","Elevation","Nearest","Scruz","Adjacent")
+for (i in set1){
+temp4<-z-eta+coef(model1)[i]*x[,i]
+    plot(temp4,x[,i],ylab=paste("covariate",i),xlab="ei")
+    temp<-lm(x[,i]~temp4)
+    x2<-seq(-10,10,by=0.001)
+    lines(x2,temp$coefficients[1]+temp$coefficients[2]*x2)
+}
+```
+
+Under the correct link function, the plot should be approximately linear. For Endemics, Area, and Adjacent, the observations lie very close to the straight reference line. The other variables also appear fairly close to linearity, although with a bit more scatter. Overall, there is no strong evidence of curvature, so a Poisson GLM with a log link seems reasonable for this data.
+
+```{r}
+library(faraway)
+data(gala)
+Xmatrix<-gala[,2:dim(gala)[2]]
+Ymatrix<-gala[,1,drop=FALSE]
+colnames(Ymatrix)<-"Species"
+par(mfrow=c(3,3))
+temp<-cbind(Ymatrix,Xmatrix)
+for (i in 1:dim(temp)[2]){
+    halfnorm(temp[,i],ylab=colnames(temp[i]))
+
+}
+temp<-cooks.distance(model1)
+par(mfrow=c(1,1))
+plot(temp)
+temp
+```
+
+Since we are interested in the magnitude of the effects of the observations, we use a half-normal plot. From the plot, we found that Species, Nearest, Endemics, and Scruz have relatively large effects, while the other variables are smaller. The effects increase as the quantiles increase, and the increase is more pronounced for the larger quantiles. We also found that for the larger quantiles, the points are far from the reference line, which suggests that these observations have a greater effect on the GLM.
+
+From the Cook’s distance plot, it is clear that only one observation, Isabela, has a very large Cook’s distance, indicating that it has a substantial influence on the model. Fernandina, on the other hand, has a very small Cook’s distance, indicating very little influence on the model. These results suggest that most observations contribute fairly evenly to the model, while only a few observations have unusually large or small influence.
+
+Based on the diagnostic plots, the Poisson GLM with log link appears to be a reasonable model for the data. The residual plots do not show strong systematic patterns, the link function seems appropriate, and most observations contribute fairly evenly to the model. However, there is one influential observation, Isabela, so the model should be interpreted with some caution.
